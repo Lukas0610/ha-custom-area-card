@@ -4,7 +4,7 @@ All notable changes are documented here. Versions follow [Semantic Versioning](h
 each `## [x.y.z]` section becomes the GitHub release notes. Changes not yet released are
 collected under `## [Unreleased]`.
 
-## [Unreleased]
+## [0.2.0]
 
 ### Added
 - Aggregated sensors (`aggregated_sensors`): combine several sensors into one value in the
