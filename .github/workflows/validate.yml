@@ -1,0 +1,76 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, to catch breakage from new Home Assistant / Marketplace rules.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  marketplace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: plugin
+          # Remove once README.md contains a screenshot (needed for the default catalog).
+          ignore: images
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Committed dist/ matches the sources
+        run: |
+          if ! git diff --exit-code --stat -- dist/; then
+            echo "::error::dist/custom-area-card.js is out of date. Run 'npm run build' and commit it."
+            exit 1
+          fi
+
+  upstream:
+    # The card renders with these Home Assistant components and ports the native area card.
+    # Fails when the current frontend drops one of them, or when the native card changes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the components the card uses still exist upstream
+        run: |
+          base=https://raw.githubusercontent.com/home-assistant/frontend/dev/src
+          fail=0
+          for f in components/tile/ha-tile-container.ts components/tile/ha-tile-icon.ts \
+                   components/tile/ha-tile-info.ts components/tile/ha-tile-badge.ts \
+                   panels/lovelace/card-features/hui-card-features.ts \
+                   panels/lovelace/editor/config-elements/hui-card-features-editor.ts \
+                   panels/lovelace/components/hui-image.ts; do
+            curl -sfL -o /dev/null "$base/$f" || { echo "::error::upstream no longer has $f"; fail=1; }
+          done
+          exit $fail
+      # Only fails the weekly run (so it sends a notification); warns on pushes and PRs.
+      - name: Check the native area card is unchanged since the last port
+        run: |
+          fail=0
+          base=https://raw.githubusercontent.com/home-assistant/frontend/dev/src/panels/lovelace
+          for f in cards/hui-area-card.ts editor/config-elements/hui-area-card-editor.ts; do
+            actual=$(curl -sfL "$base/$f" | sha256sum | cut -d' ' -f1)
+            expected=$(jq -r --arg f "$f" '.[$f]' upstream.json)
+            if [ "$actual" != "$expected" ]; then
+              echo "::warning::$f changed upstream. Port the changes, then update upstream.json."
+              fail=1
+            fi
+          done
+          if [ "$fail" = 1 ] && [ "${{ github.event_name }}" = schedule ]; then exit 1; fi

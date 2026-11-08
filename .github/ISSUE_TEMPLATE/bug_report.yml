@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work with the custom area card
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Card version
+      description: Shown in the browser console as "CUSTOM-AREA-CARD x.y.z", or under Settings → Marketplace
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      description: Settings → About (core and frontend version)
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Card configuration
+      description: Edit the card → ⋮ → Edit in YAML, then paste it here.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened, and what did you expect?
+      description: Does the same happen with the built-in area card (type `area`)?
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console
+      description: Open the browser's developer tools (F12) → Console, reload the dashboard and paste lines mentioning custom-area-card.
+      render: text
