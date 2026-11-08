@@ -16,6 +16,7 @@ export interface EntityRegistryEntry {
   area_id?: string | null;
   hidden?: boolean;
   entity_category?: "config" | "diagnostic" | null;
+  display_precision?: number | null;
 }
 
 export interface DeviceRegistryEntry {
@@ -39,6 +40,7 @@ export interface HomeAssistant {
   areas: Record<string, AreaRegistryEntry>;
   locale: { language: string };
   localize: (key: string, ...args: any[]) => string;
+  /** `state` overrides the entity's state, formatted with its unit and display precision. */
   formatEntityState: (stateObj: HassEntityState, state?: string) => string;
 }
 
@@ -53,6 +55,14 @@ export interface LovelaceCardFeatureConfig {
 }
 
 export type DisplayType = "compact" | "icon" | "picture" | "camera";
+export type Aggregate = "sum" | "min" | "max" | "avg" | "median";
+
+/** Several sensors shown as one value in the details line. */
+export interface AggregatedSensorConfig {
+  entities: string[];
+  /** Defaults to `avg`. */
+  aggregate?: Aggregate;
+}
 export type FeaturePosition = "bottom" | "inline";
 
 export interface CustomAreaCardConfig {
@@ -62,6 +72,8 @@ export interface CustomAreaCardConfig {
   color?: string;
   /** Entity IDs shown in the details line, in this order. */
   sensors?: string[];
+  /** Shown after `sensors`, one value per entry, in this order. */
+  aggregated_sensors?: AggregatedSensorConfig[];
   alert_classes?: string[];
   display_type?: DisplayType;
   /** @deprecated Use `display_type` instead (kept for configs copied from the area card). */

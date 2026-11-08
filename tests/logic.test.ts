@@ -5,7 +5,11 @@ import { test } from "node:test";
 import { localize, STRINGS } from "../src/localize.ts";
 import {
   activeAlerts,
+  aggregate,
+  aggregatedDisplay,
   alertEntityIds,
+  detailsLine,
+  validateSensors,
   cameraEntity,
   cardSize,
   computeCssColor,
@@ -38,7 +42,7 @@ function fakeHass(specs: Record<string, Spec>): HomeAssistant {
     areas: { living: { area_id: "living", name: "Living room", temperature_entity_id: "sensor.t" } },
     locale: { language: "en" },
     localize: (key: string) => key,
-    formatEntityState: (s) => `${s.state} ${s.attributes.unit_of_measurement ?? ""}`.trim(),
+    formatEntityState: (s, state) => `${state ?? s.state} ${s.attributes.unit_of_measurement ?? ""}`.trim(),
   };
 }
 
@@ -60,6 +64,72 @@ test("details line hides unavailable, unknown and deleted sensors", () => {
   assert.equal(sensorsDisplay(hass, ["sensor.a"]), "");
   assert.equal(sensorsDisplay(hass, []), undefined);
   assert.equal(sensorsDisplay(hass, undefined), undefined);
+});
+
+test("aggregate functions", () => {
+  const v = [4, 1, 3, 2];
+  assert.equal(aggregate(v, "sum"), 10);
+  assert.equal(aggregate(v, "min"), 1);
+  assert.equal(aggregate(v, "max"), 4);
+  assert.equal(aggregate(v, "avg"), 2.5);
+  assert.equal(aggregate(v, "median"), 2.5);
+  assert.equal(aggregate([5, 1, 3], "median"), 3);
+});
+
+test("aggregated sensors: numeric, available, same unit as the first", () => {
+  const hass = fakeHass({
+    "sensor.off": { state: "unavailable", unit: "°F" },
+    "sensor.text": { state: "high", unit: "°F" },
+    "sensor.a": { state: "20", unit: "°C" },
+    "sensor.f": { state: "70", unit: "°F" },
+    "sensor.b": { state: "21.25", unit: "°C" },
+    "sensor.empty": { state: "", unit: "°C" },
+  });
+  const all = ["sensor.off", "sensor.text", "sensor.a", "sensor.f", "sensor.b", "sensor.empty"];
+  assert.equal(aggregatedDisplay(hass, { entities: all, aggregate: "avg" }), "20.6 °C", "rounded to 1 decimal");
+  assert.equal(aggregatedDisplay(hass, { entities: all }), "20.6 °C", "defaults to avg");
+  assert.equal(aggregatedDisplay(hass, { entities: all, aggregate: "max" }), "21.3 °C");
+  assert.equal(aggregatedDisplay(hass, { entities: ["sensor.off", "sensor.text"] }), undefined);
+
+  hass.entities["sensor.a"].display_precision = 2;
+  assert.equal(
+    aggregatedDisplay(hass, { entities: all, aggregate: "sum" }),
+    "41.25 °C",
+    "display precision of the first sensor is left to formatEntityState"
+  );
+});
+
+test("details line: single sensors first, then aggregated ones", () => {
+  const hass = fakeHass({
+    "sensor.t": { state: "21", unit: "°C" },
+    "sensor.p1": { state: "100", unit: "W" },
+    "sensor.p2": { state: "50.5", unit: "W" },
+    "sensor.off": { state: "unknown", unit: "W" },
+  });
+  assert.equal(
+    detailsLine(hass, {
+      sensors: ["sensor.t"],
+      aggregated_sensors: [
+        { entities: ["sensor.off"], aggregate: "sum" },
+        { entities: ["sensor.p1", "sensor.p2"], aggregate: "sum" },
+      ],
+    }),
+    "21 °C · 150.5 W"
+  );
+  assert.equal(detailsLine(hass, { aggregated_sensors: [{ entities: ["sensor.p1"] }] }), "100 W");
+  assert.equal(detailsLine(hass, { aggregated_sensors: [{ entities: ["sensor.off"] }] }), "");
+  assert.equal(detailsLine(hass, { sensors: [], aggregated_sensors: [] }), undefined);
+});
+
+test("aggregated sensors are validated", () => {
+  const ok = (aggregated_sensors: unknown) => validateSensors(card({ aggregated_sensors } as any));
+  ok(undefined);
+  ok([{ entities: ["sensor.a"] }, { entities: [], aggregate: "median" }]);
+  assert.throws(() => ok({ entities: ["sensor.a"] }));
+  assert.throws(() => ok([{ entities: "sensor.a" }]));
+  assert.throws(() => ok([{ entities: ["sensor.a"], aggregate: "mean" }]));
+  assert.throws(() => ok(["sensor.a"]));
+  assert.throws(() => normalizeConfig(card({ aggregated_sensors: [{}] } as any)), /aggregated_sensors/);
 });
 
 test("config is normalized like the native card", () => {
@@ -132,6 +202,14 @@ test("editor round-trip cleans up like the native editor", () => {
   for (const key of ["content_layout", "camera_view", "navigation_path", "image_tap_action", "sensors", "features", "show_camera"]) {
     assert.ok(!(key in config), key);
   }
+
+  const agg = (aggregated_sensors: unknown) =>
+    editorValueToConfig({ type: "x", area: "a", aggregated_sensors }, undefined).aggregated_sensors;
+  assert.equal(agg([]), undefined);
+  assert.equal(agg([{ aggregate: "sum" }, { entities: [] }]), undefined, "entries without sensors are dropped");
+  assert.deepEqual(agg([{ entities: ["sensor.a"], aggregate: "min" }, { entities: [] }]), [
+    { entities: ["sensor.a"], aggregate: "min" },
+  ]);
 });
 
 test("stub config uses the area's temperature and humidity sensors", () => {

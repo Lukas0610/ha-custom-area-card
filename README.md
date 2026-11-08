@@ -5,7 +5,8 @@ The built-in **area card**, with one difference: the details line below the area
 
 The built-in card shows, for example, the *median* of all temperature sensors and the *sum* of all
 power sensors in an area. That's useless when you care about one specific sensor, or when the
-area contains sensors that shouldn't be mixed in. This card shows exactly the sensors you choose.
+area contains sensors that shouldn't be mixed in. This card shows exactly the sensors you choose,
+and can also combine sensors you choose into one value (sum, minimum, maximum, average or median).
 
 Everything else matches the built-in card: compact / icon / picture / camera display, alert
 icons for motion, moisture etc., card features (area controls), tap actions, sections grid
@@ -32,7 +33,8 @@ Requires Home Assistant 2026.9 or newer.
 ## Usage
 
 Edit a dashboard, select **Add card** and pick **Custom area card**. The editor is the same as
-the built-in area card's, except that **Sensors** replaces **Sensor classes**.
+the built-in area card's, except that **Sensors** and **Aggregated sensors** replace
+**Sensor classes**.
 
 ```yaml
 type: custom:custom-area-card
@@ -40,7 +42,11 @@ area: living_room
 sensors:
   - sensor.living_room_temperature
   - sensor.living_room_humidity
-  - sensor.tv_power
+aggregated_sensors:
+  - entities:
+      - sensor.tv_power
+      - sensor.soundbar_power
+    aggregate: sum
 alert_classes:
   - motion
   - window
@@ -56,6 +62,7 @@ in its YAML and replace `sensor_classes` with `sensors`. All other options carry
 |---|---|
 | `area` | **Required.** Area ID. |
 | `sensors` | List of sensor entity IDs shown in the details line, in this order. Each one is formatted like everywhere else in Home Assistant (display precision, units). Unavailable or unknown sensors are left out. |
+| `aggregated_sensors` | List of entries shown after `sensors`, each as one value: `entities` (sensor entity IDs) and `aggregate` (`sum`, `min`, `max`, `avg` (default) or `median`). Unavailable and non-numeric sensors are skipped. Only sensors with the same unit as the first available one are combined. The value uses that sensor's unit and display precision (otherwise 1 decimal). |
 | `name` | Overrides the area name. |
 | `color` | Icon and feature color (theme color name or any CSS color). |
 | `display_type` | `compact`, `icon`, `picture` (default) or `camera`. |

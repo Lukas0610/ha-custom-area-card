@@ -2,13 +2,16 @@ import { mdiGestureTap, mdiListBox, mdiTextShort } from "@mdi/js";
 import { css, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { loadEditorComponents } from "./load.ts";
-import { localize } from "./localize.ts";
+import { localize as ownLocalize, type StringKey } from "./localize.ts";
 import {
+  AGGREGATES,
   binaryClassesForArea,
+  DEFAULT_AGGREGATE,
   DEFAULT_ALERT_CLASSES,
   editorData,
   editorValueToConfig,
   memoizeOne,
+  validateSensors,
 } from "./logic.ts";
 import type {
   CustomAreaCardConfig,
@@ -47,13 +50,8 @@ export class CustomAreaCardEditor extends LitElement {
   }
 
   public setConfig(config: CustomAreaCardConfig): void {
-    if (
-      config.sensors !== undefined &&
-      !(Array.isArray(config.sensors) && config.sensors.every((s) => typeof s === "string"))
-    ) {
-      // The dashboard falls back to the YAML editor and shows this message.
-      throw new Error("sensors must be a list of entity IDs");
-    }
+    // On error, the dashboard falls back to the YAML editor and shows the message.
+    validateSensors(config);
     const displayType = config.display_type || (config.show_camera ? "camera" : "picture");
     this._config = { ...config, display_type: displayType };
     delete this._config.show_camera;
@@ -65,7 +63,12 @@ export class CustomAreaCardEditor extends LitElement {
   }));
 
   private _schema = memoizeOne(
-    (localize: Localize, displayType: DisplayType, binaryClasses: SelectOption[]): Schema[] => [
+    (
+      localize: Localize,
+      language: string,
+      displayType: DisplayType,
+      binaryClasses: SelectOption[]
+    ): Schema[] => [
       { name: "area", selector: { area: {} } },
       {
         name: "content",
@@ -143,6 +146,37 @@ export class CustomAreaCardEditor extends LitElement {
             // The one difference to the native editor: entities instead of sensor classes
             name: "sensors",
             selector: { entity: { multiple: true, reorder: true, filter: { domain: "sensor" } } },
+          },
+          {
+            // HA's list editor: add/edit entries in a dialog, delete, reorder
+            name: "aggregated_sensors",
+            selector: {
+              object: {
+                multiple: true,
+                reorder: true,
+                fields: {
+                  entities: {
+                    label: ownLocalize(language, "sensors"),
+                    required: true,
+                    selector: { entity: { multiple: true, filter: { domain: "sensor" } } },
+                  },
+                  aggregate: {
+                    label: ownLocalize(language, "aggregate"),
+                    required: true,
+                    default: DEFAULT_AGGREGATE,
+                    selector: {
+                      select: {
+                        mode: "dropdown",
+                        options: AGGREGATES.map((value) => ({
+                          value,
+                          label: ownLocalize(language, `aggregate_${value}`),
+                        })),
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         ],
       },
@@ -243,6 +277,7 @@ export class CustomAreaCardEditor extends LitElement {
     const data = editorData(config);
     const schema = this._schema(
       this.hass.localize,
+      this.hass.locale.language,
       displayType,
       this._binaryOptions(
         this.hass.entities,
@@ -333,7 +368,8 @@ export class CustomAreaCardEditor extends LitElement {
           ? this.hass!.localize("ui.panel.lovelace.editor.card.area.alert_classes_helper")
           : undefined;
       case "sensors":
-        return localize(this.hass!.locale.language, "sensors_helper");
+      case "aggregated_sensors":
+        return ownLocalize(this.hass!.locale.language, `${schema.name}_helper` as StringKey);
       default:
         return undefined;
     }
@@ -345,7 +381,8 @@ export class CustomAreaCardEditor extends LitElement {
       case "area":
         return l("ui.panel.lovelace.editor.card.area.name");
       case "sensors":
-        return localize(this.hass!.locale.language, "sensors");
+      case "aggregated_sensors":
+        return ownLocalize(this.hass!.locale.language, schema.name as StringKey);
       case "name":
       case "camera_view":
       case "content":

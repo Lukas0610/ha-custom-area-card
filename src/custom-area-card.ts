@@ -12,13 +12,13 @@ import {
   cardSize,
   computeCssColor,
   DEFAULT_ASPECT_RATIO,
+  detailsLine,
   featureLayout,
   featurePosition,
   gridOptions,
   hasAction,
   memoizeOne,
   normalizeConfig,
-  sensorsDisplay,
   stubConfig,
 } from "./logic.ts";
 import type { ActionConfig, CustomAreaCardConfig, GridOptions, HomeAssistant } from "./types.ts";
@@ -246,7 +246,7 @@ export class CustomAreaCard extends LitElement {
           <ha-tile-info
             slot="info"
             class=${ifDefined(config.vertical && fixedInfoHeight ? "twoline" : undefined)}
-            .secondary=${sensorsDisplay(this.hass, config.sensors)}
+            .secondary=${detailsLine(this.hass, config)}
           >
             <span slot="primary" id="name">${config.name || area.name?.trim()}</span>
           </ha-tile-info>

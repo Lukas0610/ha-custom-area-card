@@ -3,6 +3,8 @@
 // behavior in sync with upstream, except that sensors replace sensor classes.
 import type {
   ActionConfig,
+  Aggregate,
+  AggregatedSensorConfig,
   CustomAreaCardConfig,
   FeaturePosition,
   GridOptions,
@@ -20,17 +22,37 @@ const INLINE_FEATURE_COLUMNS = 2;
 
 /* ----------------------------------------------------------------------- config */
 
+const isEntityList = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((s) => typeof s === "string");
+
+/** Throws for malformed `sensors` / `aggregated_sensors` (the editor then shows YAML). */
+export function validateSensors(config: CustomAreaCardConfig): void {
+  if (config.sensors !== undefined && !isEntityList(config.sensors)) {
+    throw new Error("sensors must be a list of entity IDs");
+  }
+  const aggregated = config.aggregated_sensors;
+  if (aggregated === undefined) return;
+  if (
+    !Array.isArray(aggregated) ||
+    !aggregated.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        isEntityList(item.entities) &&
+        (item.aggregate === undefined || AGGREGATES.includes(item.aggregate))
+    )
+  ) {
+    throw new Error(
+      `aggregated_sensors must be a list of {entities: [entity IDs], aggregate: ${AGGREGATES.join(" | ")}}`
+    );
+  }
+}
+
 export function normalizeConfig(config: CustomAreaCardConfig): CustomAreaCardConfig {
   if (!config.area) {
     throw new Error("Specify an area");
   }
-  const sensors = config.sensors;
-  if (
-    sensors !== undefined &&
-    !(Array.isArray(sensors) && sensors.every((s) => typeof s === "string"))
-  ) {
-    throw new Error("sensors must be a list of entity IDs");
-  }
+  validateSensors(config);
 
   const displayType = config.display_type || (config.show_camera ? "camera" : "picture");
   const vertical = displayType === "compact" ? config.vertical : false;
@@ -158,6 +180,74 @@ export function sensorsDisplay(
     .map((stateObj) => hass.formatEntityState(stateObj))
     .filter(Boolean)
     .join(SEPARATOR);
+}
+
+export const AGGREGATES: readonly Aggregate[] = ["sum", "min", "max", "avg", "median"];
+export const DEFAULT_AGGREGATE: Aggregate = "avg";
+
+export function aggregate(values: number[], fn: Aggregate): number {
+  switch (fn) {
+    case "sum":
+      return values.reduce((acc, v) => acc + v, 0);
+    case "min":
+      return Math.min(...values);
+    case "max":
+      return Math.max(...values);
+    case "avg":
+      return values.reduce((acc, v) => acc + v, 0) / values.length;
+    case "median": {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+  }
+}
+
+/**
+ * One aggregated value, like the native card's sensor classes: only available numeric
+ * states count, and only sensors with the unit of the first one (no mixing °C and °F).
+ * Formatted as the first sensor's state, so it gets its unit and display precision;
+ * without a display precision it's rounded to 1 decimal like the native card does.
+ */
+export function aggregatedDisplay(
+  hass: HomeAssistant,
+  item: AggregatedSensorConfig
+): string | undefined {
+  let first: HassEntityState | undefined;
+  const values: number[] = [];
+  for (const id of item.entities) {
+    const stateObj = hass.states[id];
+    if (!stateObj || HIDDEN_STATES.has(stateObj.state) || stateObj.state.trim() === "") continue;
+    const value = Number(stateObj.state);
+    if (!Number.isFinite(value)) continue;
+    first ??= stateObj;
+    if (stateObj.attributes.unit_of_measurement === first.attributes.unit_of_measurement) {
+      values.push(value);
+    }
+  }
+  if (!first) {
+    return undefined;
+  }
+  let value = aggregate(values, item.aggregate ?? DEFAULT_AGGREGATE);
+  if (hass.entities[first.entity_id]?.display_precision == null) {
+    value = Math.round(value * 10) / 10;
+  }
+  return hass.formatEntityState(first, String(value));
+}
+
+/** The whole details line: single sensors first, then aggregated ones. */
+export function detailsLine(
+  hass: HomeAssistant,
+  config: Pick<CustomAreaCardConfig, "sensors" | "aggregated_sensors">
+): string | undefined {
+  const singles = sensorsDisplay(hass, config.sensors);
+  const aggregated = config.aggregated_sensors?.length
+    ? config.aggregated_sensors.map((item) => aggregatedDisplay(hass, item))
+    : undefined;
+  if (singles === undefined && aggregated === undefined) {
+    return undefined;
+  }
+  return [singles, ...(aggregated ?? [])].filter(Boolean).join(SEPARATOR);
 }
 
 /** Caches the last result while all arguments are identical (like memoize-one). */
@@ -297,6 +387,12 @@ export function editorValueToConfig(
     delete config.content_layout;
   }
   if (Array.isArray(config.sensors) && config.sensors.length === 0) delete config.sensors;
+  if (Array.isArray(config.aggregated_sensors)) {
+    // The list dialog can save entries without sensors; those would never show anything.
+    const items = config.aggregated_sensors.filter((item) => item?.entities?.length);
+    if (items.length) config.aggregated_sensors = items;
+    else delete config.aggregated_sensors;
+  }
   return config;
 }
 

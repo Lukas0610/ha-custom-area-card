@@ -56,6 +56,12 @@ real HA instance.
   (`ui.panel.lovelace.editor.card.area.*`, `...generic.*`, `...tile.*`). Only strings HA has no
   key for go in `localize.ts`, and **every key must exist in both `en` and `de`** (a test checks
   this). German uses informal "du".
+- Details line = `sensors` (formatted states), then one value per `aggregated_sensors` entry
+  (`detailsLine` in `logic.ts`). Aggregation follows the native sensor-class rules (numeric,
+  available, same unit as the first), and is formatted through
+  `hass.formatEntityState(firstStateObj, String(value))` for unit + display precision. The editor
+  edits that list with the native `object` selector (`multiple` + `fields`); `reorder` is
+  ignored by frontends before it existed.
 - `hasCompatibleFeatures` (shows the features position picker) is approximated as "the area
   exists". The native editor asks the internal feature registry, which isn't reachable.
 
@@ -75,8 +81,12 @@ real HA instance.
 
 - The version lives only in `package.json` (SemVer, **no `v` prefix**). `build.mjs` injects it
   into the bundle. The Marketplace requires the tag to equal that version.
-- Steps: bump `package.json`, `npm run build`, add a `## [x.y.z]` section to `CHANGELOG.md`, merge
-  to `main`, then run **Actions → Release**. The workflow validates, refuses existing tags, missing
+- **Changelog entries for new changes always go under `## [Unreleased]`** (at the top, create it
+  if missing). **Never bump the version or add a `## [x.y.z]` section on your own.** Only do it
+  when the developer asks for a version bump/release (explicit owner preference).
+- Steps (only when asked): bump `package.json` (`npm version x.y.z --no-git-tag-version`),
+  `npm run build`, rename `## [Unreleased]` to `## [x.y.z]` in `CHANGELOG.md`, merge to `main`,
+  then run **Actions → Release**. The workflow validates, refuses existing tags, missing
   changelog sections or a stale dist, attaches `dist/custom-area-card.js`, and marks
   `aN`/`bN`/`rcN`/`devN` versions as pre-releases.
 - Never edit or move a published tag. Fix things in a new patch release.
